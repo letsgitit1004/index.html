@@ -1,6 +1,6 @@
 {
-  "name": "구조 보조 교관 시간표",
-  "short_name": "구조 시간표",
+  "name": "교관 시간표",
+  "short_name": "교관 시간표",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
