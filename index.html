@@ -111,6 +111,14 @@ h2 small{font-weight:400;color:var(--muted);font-size:.82rem}
 .mini.fit{background:var(--calm-soft);color:var(--calm)}
 @media (min-width:480px){.cell .ct{font-size:.8rem}.cell .cp{font-size:.72rem}}
 
+.cell .cw{font-size:.66rem;line-height:1.2;color:var(--muted);white-space:nowrap;overflow:hidden}
+.cell .cw b{font-size:.8rem;font-weight:400}
+.wxline{padding:4px 16px 10px;font-size:.9rem;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.wxline .big{font-size:1.5rem;line-height:1}
+.wxline .rain{color:var(--calm);font-weight:500}
+.credit{font-size:.75rem;color:var(--muted);text-align:center;margin:26px 0 0}
+.credit a{color:inherit}
+
 /* tomorrow: the dispatch card */
 .dispatch{background:var(--surface);border:2px solid var(--ink);border-radius:16px;overflow:hidden}
 .dispatch .band{height:10px;background:var(--ink)}
@@ -238,6 +246,34 @@ function tomorrowKey(){
   return null;
 }
 let selWeek = currentWeek();
+/* ---------- weather (Open-Meteo, 광주 소촌동) ---------- */
+const WX_URL = "https://api.open-meteo.com/v1/forecast?latitude=35.15&longitude=126.80&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FSeoul&forecast_days=16";
+const WX_KEY = "rescue-weather-v1";
+let wx = null;
+try{ const c = JSON.parse(localStorage.getItem(WX_KEY)||"null"); if(c && c.days) wx = c; }catch(e){}
+function wxInfo(code){
+  if(code===0) return ["☀️","맑음"];
+  if(code===1||code===2) return ["🌤️","구름 조금"];
+  if(code===3) return ["☁️","흐림"];
+  if(code===45||code===48) return ["🌫️","안개"];
+  if(code>=51&&code<=57) return ["🌦️","이슬비"];
+  if((code>=61&&code<=67)||(code>=80&&code<=82)) return ["🌧️","비"];
+  if((code>=71&&code<=77)||code===85||code===86) return ["❄️","눈"];
+  if(code>=95) return ["⛈️","뇌우"];
+  return ["🌡️","날씨"];
+}
+async function loadWeather(){
+  if(wx && Date.now()-wx.at < 60*60*1000) return;
+  try{
+    const r = await fetch(WX_URL); if(!r.ok) throw 0;
+    const j = await r.json(); const d = j.daily; const days = {};
+    d.time.forEach((k,i)=>{ days[k] = {c:d.weather_code[i], hi:Math.round(d.temperature_2m_max[i]), lo:Math.round(d.temperature_2m_min[i]), p:d.precipitation_probability_max ? d.precipitation_probability_max[i] : null}; });
+    wx = {at:Date.now(), days};
+    try{ localStorage.setItem(WX_KEY, JSON.stringify(wx)); }catch(e){}
+    if(!sheet.open) render();
+  }catch(e){ /* keep last cached weather */ }
+}
+const wxOf = k => (wx && wx.days && wx.days[k] && k >= todayKey) ? wx.days[k] : null;
 let span = 2; try{ const v = +localStorage.getItem("rescue-span"); if(v===2||v===3) span = v; }catch(e){}
 
 /* ---------- saving ---------- */
@@ -329,6 +365,7 @@ function cell(x){
   const we = x.dow>4;
   return `<button type="button" class="cell${sp?" special":""}${isT?" today":""}${we?" wkend":""}" data-act="open" data-k="${x.key}" aria-label="${x.m}월 ${x.d}일 ${DOW[x.dow]}요일${titles?", "+esc(titles):", 비는 날"} 편집">
     <span class="n">${x.d===1||x.dow===0?x.m+"/":""}${x.d}</span>
+    ${(()=>{ const w = wxOf(x.key); if(!w) return ""; const [ic,lb] = wxInfo(w.c); return `<span class="cw" title="${lb} ${w.hi}° / ${w.lo}°"><b>${ic}</b>${we?"":" "+w.hi+"°"}</span>`; })()}
     <span class="ct${titles?"":" empty"}">${titles?esc(titles):(we?"수업 없음":"비는 날")}</span>
     ${places?`<span class="cp">${esc(places)}</span>`:""}
     <span class="cf">${tags}</span></button>`;
@@ -352,6 +389,8 @@ function renderTomorrow(){
   <div class="dispatch${sp?" special":""}"><div class="band"></div>
   <div class="head"><div class="when">${x.m}.${pad(x.d)}<span>${DOW[x.dow]}요일</span></div>
   <button type="button" class="btn ghost" data-act="open" data-k="${k}">편집</button></div>`;
+  const tw = wxOf(k);
+  if(tw){ const [ic,lb] = wxInfo(tw.c); h += `<div class="wxline"><span class="big">${ic}</span><span>${lb} · 최고 ${tw.hi}° / 최저 ${tw.lo}°</span>${tw.p!=null?`<span class="rain">비 올 확률 ${tw.p}%</span>`:""}</div>`; }
   if(!dd.items.length){
     h += `<div class="empty-day">${x.dow>4?"수업이 없는 날이에요.":"비는 날이에요."}${x.dow===2||x.dow===4?" 여유가 생기면 예습 거리를 꺼내 보세요.":""}</div>`;
   }
@@ -391,7 +430,8 @@ function renderGuard(){
     <section aria-labelledby="bkH"><h2 id="bkH">백업 <small>휴대폰을 바꾸거나 초기화하기 전에</small></h2><div class="panel">
     <p class="hint">입력한 내용은 이 휴대폰에만 저장돼요. 가끔 백업 파일을 저장해 두세요.</p>
     <div class="add" style="margin:0"><button type="button" data-act="export">백업 파일 저장</button><button type="button" class="btn ghost" data-act="import">백업 불러오기</button></div>
-    <input type="file" id="importFile" accept="application/json,.json" hidden></div></section>`;
+    <input type="file" id="importFile" accept="application/json,.json" hidden></div></section>
+    <p class="credit">날씨 정보: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (광주 소촌동, CC BY 4.0)</p>`;
 }
 function render(){
   renderWeeks();
@@ -552,6 +592,8 @@ document.getElementById("fab").addEventListener("click", ()=>{
 render();
 setStatus("이 기기에 저장됨");
 connect();
+loadWeather();
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) loadWeather(); });
 if("serviceWorker" in navigator && location.protocol==="https:"){ navigator.serviceWorker.register("sw.js").catch(()=>{}); }
 })();
 </script>
